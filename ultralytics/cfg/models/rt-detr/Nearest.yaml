@@ -1,0 +1,54 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# RT-DETR-l object detection model with P3-P5 outputs. For details see https://docs.ultralytics.com/models/rtdetr
+
+# Parameters
+nc: 3  # number of classes
+scales: # model compound scaling constants, i.e. 'model=yolov8n-cls.yaml' will call yolov8-cls.yaml with scale 'n'
+  # [depth, width, max_channels]
+  l: [1.00, 1.00, 1024]              # 482 layers, 20952529 parameters, 20952529 gradients, 51.2 GFLOPs
+
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, ConvNormLayer, [32, 3, 2, 1, 'relu']] # 0-P1
+  - [-1, 1, ConvNormLayer, [32, 3, 1, 1, 'relu']] # 1
+  - [-1, 1, ConvNormLayer, [64, 3, 1, 1, 'relu']] # 2
+  - [-1, 1, nn.MaxPool2d, [3, 2, 1]] # 3-P2
+
+
+  - [-1, 2, Blocks, [64,  BasicBlock, 2, False]] # 4
+  - [-1, 2, Blocks, [128, BasicBlock, 3, False]] # 5-P3
+  - [-1, 2, Blocks, [256, BasicBlock, 4, False]] # 6-P4
+  - [-1, 2, Blocks, [512, BasicBlock, 5, False]] # 7-P5
+
+head:
+  - [-1, 1, Conv, [256, 1, 1, None, 1, 1, False]]  # 8 input_proj.2
+  - [-1, 1, AIFI, [1024, 8]]
+  - [-1, 1, Conv, [256, 1, 1]]  # 10, Y5, lateral_convs.0
+
+  - [4, 1, Conv, [64, 3, 2]]   # 11 downsample backbone P3
+  - [6, 1, nn.Upsample, [None, 2, 'nearest']]  # 12
+  - [[11, 5, 12], 1, Concat, [1]] # 13
+  - [-1, 1, Conv, [64, 1,1]]   # 14
+
+  - [5, 1, Conv, [128, 3, 2]]   # 15 downsample backbone P3
+  - [10, 1, nn.Upsample, [None, 2, 'nearest']]  # 16
+  - [[15, 6, 16], 1, Concat, [1]] # 17
+  - [-1, 1, Conv, [128, 1,1]]   # 18
+
+  - [[14, 18], 1, ASFF2, [64, 0]]      # 19
+  - [[14, 18], 1, ASFF2, [128, 1]]     # 20
+  - [-2, 1, RepC3, [64, 0.5]]          # 21
+  - [-2, 1, RepC3, [128, 0.5]]         # 22
+
+  - [[21, 22, 10], 1, ASFF3, [64, 0]]  # 23
+  - [[21, 22, 10], 1, ASFF3, [128, 1]] # 24
+  - [[21, 22, 10], 1, ASFF3, [256, 2]] # 25
+
+  - [23, 1, RepC3, [128, 0.5]]         # 26
+  - [-1, 1, Conv, [128, 1, 1]]      # 27
+  - [24, 1, RepC3, [256, 0.5]]         # 28
+  - [-1, 1, Conv, [128, 1, 1]]      # 29
+  - [25, 1, RepC3, [512, 0.5]]         # 30
+  - [-1, 1, Conv, [128, 1, 1]]      # 31
+
+  - [[27, 29, 31], 1, RTDETRDecoder, [nc, 256, 300, 4, 8, 3]]  # Detect(P3, P4, P5)
